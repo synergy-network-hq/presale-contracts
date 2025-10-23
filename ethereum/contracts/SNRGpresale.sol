@@ -98,7 +98,8 @@ contract SNRGPresale is Ownable, ReentrancyGuard {
 
         _processPurchase(msg.sender, snrgAmount);
 
-        IERC20(paymentToken).transferFrom(msg.sender, treasury, paymentAmount);
+        // FIXED: Explicitly check the return value of transferFrom
+        require(IERC20(paymentToken).transferFrom(msg.sender, treasury, paymentAmount), "payment transfer fail");
         
         emit Purchased(msg.sender, paymentToken, snrgAmount, paymentAmount);
     }
