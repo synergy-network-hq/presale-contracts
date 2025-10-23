@@ -55,6 +55,9 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable {
 
     uint8 private constant _DECIMALS = 9;
 
+    /// @notice Emitted when the staking, swap or rescue registry endpoints are set.
+    event EndpointsSet(address indexed staking, address indexed swap, address indexed rescueRegistry);
+
     // CHANGE: Removed staking, swap, and rescueRegistry from the constructor
     constructor(
         address _treasury
@@ -70,9 +73,14 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable {
 
     // This function is now used to set the addresses AFTER all contracts are deployed
     function setEndpoints(address _staking, address _swap, address _rescueRegistry) external onlyOwner {
+        // Ensure endpoints are not already configured
+        require(staking == address(0) && swap == address(0) && address(rescueRegistry) == address(0), "already set");
+        // Validate all endpoint addresses to prevent zero-address assignments
+        require(_staking != address(0) && _swap != address(0) && _rescueRegistry != address(0), "zero endpoint");
         staking = _staking;
         swap = _swap;
         rescueRegistry = IRescueRegistry(_rescueRegistry);
+        emit EndpointsSet(_staking, _swap, _rescueRegistry);
     }
 
     function _update(address from, address to, uint256 amount) internal override {

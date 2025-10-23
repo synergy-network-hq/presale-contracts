@@ -69,9 +69,11 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
      * @dev The treasury wallet must have first called `approve()` on the SNRG token contract.
      * @param amount The total amount of SNRG to pull for rewards.
      */
-    function fundContract(uint256 amount) external onlyOwner {
+    function fundContract(uint256 amount) external onlyOwner nonReentrant {
         require(!isFunded, "already funded");
         require(amount > 0, "amount=0");
+        // Ensure the SNRG token address has been set before funding
+        require(address(snrg) != address(0), "snrg=0");
         
         isFunded = true;
         require(snrg.transferFrom(treasury, address(this), amount), "fund transfer failed");
@@ -80,6 +82,8 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
     }
     
     function stake(uint256 amount, uint64 duration) external nonReentrant {
+        require(isFunded, "not funded");
+        require(address(snrg) != address(0), "snrg=0");
         require(amount > 0, "amount=0");
         uint256 rewardBps = rewardRates[duration];
         require(rewardBps > 0, "invalid duration");
@@ -101,6 +105,8 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
     }
 
     function withdraw(uint256 stakeIndex) external nonReentrant {
+        require(address(snrg) != address(0), "snrg=0");
+        require(stakeIndex < userStakes[msg.sender].length, "invalid index");
         Stake storage s = userStakes[msg.sender][stakeIndex];
         
         require(!s.withdrawn, "already withdrawn");
@@ -114,6 +120,8 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
     }
 
     function withdrawEarly(uint256 stakeIndex) external nonReentrant {
+        require(address(snrg) != address(0), "snrg=0");
+        require(stakeIndex < userStakes[msg.sender].length, "invalid index");
         Stake storage s = userStakes[msg.sender][stakeIndex];
         
         require(!s.withdrawn, "already withdrawn");

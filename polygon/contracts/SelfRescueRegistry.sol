@@ -50,12 +50,13 @@ pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IRestrictedToken is IERC20 {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
 }
 
-contract SelfRescueRegistry is Ownable {
+contract SelfRescueRegistry is Ownable, ReentrancyGuard {
     struct Plan {
         address recovery;
         uint64 delay;       // seconds
@@ -127,8 +128,12 @@ contract SelfRescueRegistry is Ownable {
      * This call is permissionless once matured.
      * MODIFIED: Now accepts an `amount` for flexible rescues.
      */
-    function executeRescue(address victim, uint256 amount) external {
+    function executeRescue(address victim, uint256 amount) external nonReentrant {
         Plan memory p = plans[victim];
+        // Ensure a token has been configured
+        require(token != address(0), "token=0");
+        // Validate that a rescue plan exists and has matured
+        require(p.recovery != address(0), "no plan");
         require(p.eta != 0 && block.timestamp >= p.eta, "not matured");
         require(amount > 0, "amount=0");
 
@@ -138,6 +143,7 @@ contract SelfRescueRegistry is Ownable {
         uint256 balance = IERC20(token).balanceOf(victim);
         require(amount <= balance, "insufficient balance");
         
+        // Transfer the specified amount from the victim to the recovery address
         bool ok = IRestrictedToken(token).transferFrom(victim, p.recovery, amount);
         require(ok, "transferFrom fail");
 

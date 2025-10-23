@@ -70,6 +70,8 @@ contract SNRGPresale is Ownable, ReentrancyGuard {
     // --- Purchase Functions ---
     function buyWithNative(uint256 snrgAmount, uint256 nonce, bytes calldata signature) external payable nonReentrant {
         require(open, "closed");
+        // Validate purchase amounts to prevent zero-value transfers
+        require(snrgAmount > 0, "snrg=0");
         require(msg.value > 0, "zero paid");
         
         bytes32 messageHash = _buildMessageHash(msg.sender, address(0), msg.value, snrgAmount, nonce);
@@ -85,7 +87,11 @@ contract SNRGPresale is Ownable, ReentrancyGuard {
 
     function buyWithToken(address paymentToken, uint256 paymentAmount, uint256 snrgAmount, uint256 nonce, bytes calldata signature) external nonReentrant {
         require(open, "closed");
+        // Validate token address and amounts up front
+        require(paymentToken != address(0), "token=0");
         require(supportedTokens[paymentToken], "token not supported");
+        require(paymentAmount > 0, "amount=0");
+        require(snrgAmount > 0, "snrg=0");
         
         bytes32 messageHash = _buildMessageHash(msg.sender, paymentToken, paymentAmount, snrgAmount, nonce);
         _verifySignature(messageHash, signature, nonce);
