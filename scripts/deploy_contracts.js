@@ -20,43 +20,48 @@ async function main() {
   // Deploy SNRG token
   const Token = await ethers.getContractFactory("SNRGToken");
   const token = await Token.deploy(TREASURY);
-  await token.deployed();
-  console.log("SNRGToken deployed to:", token.address);
+  await token.waitForDeployment();
+  const tokenAddress = await token.getAddress();
+  console.log("SNRGToken deployed to:", tokenAddress);
 
   // Deploy SelfRescueRegistry and set the owner to the deployer
   const RescueRegistry = await ethers.getContractFactory("SelfRescueRegistry");
   const rescue = await RescueRegistry.deploy(deployer.address);
-  await rescue.deployed();
-  console.log("SelfRescueRegistry deployed to:", rescue.address);
+  await rescue.waitForDeployment();
+  const rescueAddress = await rescue.getAddress();
+  console.log("SelfRescueRegistry deployed to:", rescueAddress);
 
   // Deploy staking contract; pass treasury and owner
   const Staking = await ethers.getContractFactory("SNRGStaking");
   const staking = await Staking.deploy(TREASURY, deployer.address);
-  await staking.deployed();
-  console.log("SNRGStaking deployed to:", staking.address);
+  await staking.waitForDeployment();
+  const stakingAddress = await staking.getAddress();
+  console.log("SNRGStaking deployed to:", stakingAddress);
 
   // Deploy swap contract; pass token address and owner
   const Swap = await ethers.getContractFactory("SNRGSwap");
-  const swap = await Swap.deploy(token.address, deployer.address);
-  await swap.deployed();
-  console.log("SNRGSwap deployed to:", swap.address);
+  const swap = await Swap.deploy(tokenAddress, deployer.address);
+  await swap.waitForDeployment();
+  const swapAddress = await swap.getAddress();
+  console.log("SNRGSwap deployed to:", swapAddress);
 
   // Deploy presale contract; pass snrg token, treasury, owner and signer
   const Presale = await ethers.getContractFactory("SNRGPresale");
-  const presale = await Presale.deploy(token.address, TREASURY, deployer.address, SIGNER);
-  await presale.deployed();
-  console.log("SNRGPresale deployed to:", presale.address);
+  const presale = await Presale.deploy(tokenAddress, TREASURY, deployer.address, SIGNER);
+  await presale.waitForDeployment();
+  const presaleAddress = await presale.getAddress();
+  console.log("SNRGPresale deployed to:", presaleAddress);
 
   // Wire contracts together.  Set the staking, swap and rescueRegistry on the token
-  const tx1 = await token.setEndpoints(staking.address, swap.address, rescue.address);
+  const tx1 = await token.setEndpoints(stakingAddress, swapAddress, rescueAddress);
   await tx1.wait();
   console.log("Token endpoints set");
 
   // Set the SNRG token address on the staking and rescue registry
-  const tx2 = await staking.setSnrgToken(token.address);
+  const tx2 = await staking.setSnrgToken(tokenAddress);
   await tx2.wait();
   console.log("Staking token set");
-  const tx3 = await rescue.setToken(token.address);
+  const tx3 = await rescue.setToken(tokenAddress);
   await tx3.wait();
   console.log("Rescue registry token set");
 

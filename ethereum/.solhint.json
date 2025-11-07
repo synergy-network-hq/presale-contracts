@@ -1,0 +1,23 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "compiler-version": "error",
+    "no-empty-blocks": "warn",
+    "no-unused-vars": "error",
+    "avoid-tx-origin": "error",
+    "check-send-result": "error",
+    "no-revert-without-message": "warn",
+    "no-console": "warn",
+    "constructor-syntax": "error",
+    "func-visibility": "error",
+    "modifier-order": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "reason-string": "warn",
+    "gas-strict": "warn",
+    "max-line-length": ["warn", 120],
+    "indent": ["warn", 4],
+    "quotes": ["warn", "double"],
+    "semicolon": ["warn", "always"]
+  }
+}

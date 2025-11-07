@@ -1,12 +1,20 @@
 [package]
 name = "self_rescue_registry"
 version = "0.1.0"
+description = "Created with Anchor"
 edition = "2021"
 
-[dependencies]
-anchor-lang = "0.28.0"
-anchor-spl = "0.28.0"
-solana-program = "1.14.17"
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "self_rescue_registry"
 
 [features]
 no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = { workspace = true }
+anchor-spl = { workspace = true }

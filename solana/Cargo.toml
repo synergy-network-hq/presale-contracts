@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "programs/snrg_staking",
+    "programs/snrg_presale", 
+    "programs/snrg_swap",
+    "programs/snrg_token",
+    "programs/self_rescue_registry"
+]
+resolver = "2"
+
+[profile.release]
+overflow-checks = true
+
+[workspace.dependencies]
+anchor-lang = "0.28.0"
+anchor-spl = "0.28.0"

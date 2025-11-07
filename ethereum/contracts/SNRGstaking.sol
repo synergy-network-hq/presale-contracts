@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity 0.8.28;
 
 /* *
 *  /$$$$$$                                                             
@@ -26,17 +26,37 @@ pragma solidity ^0.8.26;
 *                                                      \______/        
 * */
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
-contract SNRGStaking is Ownable, ReentrancyGuard {
-    IERC20 public snrg;
-    address public immutable treasury;
-    bool public isFunded; // <-- NEW: Flag to ensure it's only funded once
-
-    // ... (Stake struct and mappings remain the same) ...
+/**
+ * @title SNRGStaking
+ * @notice Staking contract for SNRG tokens with fixed-term rewards
+ * @dev Implements time-locked staking with reward distribution
+ */
+contract SNRGStaking is Ownable2Step, ReentrancyGuard, Pausable {
+    using SafeERC20 for IERC20;
     
+    /// @notice SNRG token contract
+    IERC20 public immutable SNRG;
+    
+    /// @notice Treasury address
+    address public immutable TREASURY;
+    
+    /// @notice Whether contract has been funded
+    bool public isFunded;
+    
+    /// @notice Total reward reserves available for distribution (FIX H-03: tracks unspent rewards)
+    uint256 public rewardReserve;
+    
+    /// @notice Total promised rewards (obligations)
+    uint256 public promisedRewards;
+    
+    /// @notice Individual stake information
     struct Stake {
         uint256 amount;
         uint256 reward;
@@ -44,53 +64,125 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
         bool withdrawn;
     }
 
+    /// @notice Reward rates by duration (in days) to basis points
     mapping(uint64 => uint256) public rewardRates;
+    
+    /// @notice User stakes
     mapping(address => Stake[]) public userStakes;
     
-    uint256 public constant EARLY_WITHDRAWAL_FEE_BPS = 500; // 5.0%
+    /// @notice Early withdrawal fee (5%)
+    uint256 public constant EARLY_WITHDRAWAL_FEE_BPS = 500;
+    
+    /// @notice Emergency withdrawal fee (10%)
+    uint256 public constant EMERGENCY_FEE_BPS = 1000;
 
     event Staked(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 reward, uint256 endTime);
     event Withdrawn(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 reward);
     event WithdrawnEarly(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 fee);
-    event ContractFunded(uint256 amount); // <-- NEW: Event for funding
+    event EmergencyWithdrawal(address indexed user, uint256 indexed stakeIndex, uint256 amount, uint256 fee);
+    event ContractFunded(uint256 amount);
+    event ReserveToppedUp(uint256 amount);
+    event InsufficientReserves(uint256 required, uint256 available);
 
-    constructor(address _treasury, address owner_) Ownable(owner_) {
-        require(_treasury != address(0), "treasury=0");
-        treasury = _treasury;
+    error ZeroAddress();
+    error AlreadyFunded();
+    error NotFunded();
+    error ZeroAmount();
+    error InvalidDuration();
+    error InvalidIndex();
+    error AlreadyWithdrawn();
+    error StakeNotMatured();
+    error StakeMatured();
+    error FeeExceedsAmount();
+    error InsufficientBalance();
+    error InsufficientReservesError();
 
-        rewardRates[30] = 125; // 1.25%
-        rewardRates[60] = 250; // 2.50%
-        rewardRates[90] = 375; // 3.75%
-        rewardRates[180] = 500; // 5.00%
+    /**
+     * @notice Constructor
+     * @param _TREASURY Treasury address
+     * @param _SNRG SNRG token address
+     * @param owner_ Owner address
+     */
+    constructor(address _TREASURY, address _SNRG, address owner_) Ownable(owner_) {
+        if (_TREASURY == address(0)) revert ZeroAddress();
+        if (_SNRG == address(0)) revert ZeroAddress();
+        if (owner_ == address(0)) revert ZeroAddress();
+        
+        TREASURY = _TREASURY;
+        SNRG = IERC20(_SNRG);
+
+        rewardRates[30] = 125;   // 1.25%
+        rewardRates[60] = 250;   // 2.50%
+        rewardRates[90] = 375;   // 3.75%
+        rewardRates[180] = 500;  // 5.00%
     }
 
     /**
-     * @notice NEW: Pulls the approved reward funds from the treasury.
-     * @dev The treasury wallet must have first called `approve()` on the SNRG token contract.
-     * @param amount The total amount of SNRG to pull for rewards.
+     * @notice Fund the contract with SNRG for rewards
+     * @param amount Amount to fund
      */
     function fundContract(uint256 amount) external onlyOwner nonReentrant {
-        require(!isFunded, "already funded");
-        require(amount > 0, "amount=0");
-        // Ensure the SNRG token address has been set before funding
-        require(address(snrg) != address(0), "snrg=0");
+        if (isFunded) revert AlreadyFunded();
+        if (amount == 0) revert ZeroAmount();
+        
+        // Check treasury has sufficient balance
+        if (SNRG.balanceOf(TREASURY) < amount) {
+            revert InsufficientBalance();
+        }
         
         isFunded = true;
-        require(snrg.transferFrom(treasury, address(this), amount), "fund transfer failed");
+        SNRG.safeTransferFrom(TREASURY, address(this), amount);
+        rewardReserve = amount;
         
         emit ContractFunded(amount);
     }
     
-    function stake(uint256 amount, uint64 duration) external nonReentrant {
-        require(isFunded, "not funded");
-        require(address(snrg) != address(0), "snrg=0");
-        require(amount > 0, "amount=0");
+    /**
+     * @notice Top up reward reserves
+     * @dev FIX H-03: Allows owner to add more rewards after initial funding
+     * @param amount Amount to add to reserves
+     */
+    function topUpReserves(uint256 amount) external onlyOwner nonReentrant {
+        if (amount == 0) revert ZeroAmount();
+        
+        // Check treasury has sufficient balance
+        if (SNRG.balanceOf(TREASURY) < amount) {
+            revert InsufficientBalance();
+        }
+        
+        SNRG.safeTransferFrom(TREASURY, address(this), amount);
+        // FIX H-03: Increase reserve counter to track unspent rewards
+        rewardReserve += amount;
+        
+        emit ReserveToppedUp(amount);
+    }
+    
+    /**
+     * @notice Stake SNRG tokens
+     * @param amount Amount to stake
+     * @param duration Duration in days
+     */
+    function stake(uint256 amount, uint64 duration) external nonReentrant whenNotPaused {
+        if (!isFunded) revert NotFunded();
+        if (amount == 0) revert ZeroAmount();
+        
         uint256 rewardBps = rewardRates[duration];
-        require(rewardBps > 0, "invalid duration");
+        if (rewardBps == 0) revert InvalidDuration();
 
-        require(snrg.transferFrom(msg.sender, address(this), amount), "transferFrom fail");
+        SNRG.safeTransferFrom(msg.sender, address(this), amount);
 
         uint256 reward = (amount * rewardBps) / 10000;
+        
+        // FIX H-03: Check if we have sufficient reserves for this reward
+        if (rewardReserve < promisedRewards + reward) {
+            emit InsufficientReserves(promisedRewards + reward, rewardReserve);
+            revert InsufficientReservesError();
+        }
+        
+        // Note: block.timestamp can be manipulated by miners within ~15 minutes
+        // This is acceptable for staking periods as the variance is minimal
+        // Check for overflow in duration calculation
+        if (duration > type(uint64).max / 1 days) revert InvalidDuration();
         uint256 endTime = block.timestamp + (duration * 1 days);
 
         uint256 stakeIndex = userStakes[msg.sender].length;
@@ -101,54 +193,143 @@ contract SNRGStaking is Ownable, ReentrancyGuard {
             withdrawn: false
         }));
 
+        // Update promised rewards
+        promisedRewards += reward;
+
         emit Staked(msg.sender, stakeIndex, amount, reward, endTime);
     }
 
+    /**
+     * @notice Withdraw matured stake with rewards
+     * @dev FIX H-03: Decreases rewardReserve when rewards are actually paid out
+     * @param stakeIndex Index of the stake
+     */
     function withdraw(uint256 stakeIndex) external nonReentrant {
-        require(address(snrg) != address(0), "snrg=0");
-        require(stakeIndex < userStakes[msg.sender].length, "invalid index");
-        Stake storage s = userStakes[msg.sender][stakeIndex];
+        if (stakeIndex >= userStakes[msg.sender].length) revert InvalidIndex();
         
-        require(!s.withdrawn, "already withdrawn");
-        require(block.timestamp >= s.endTime, "stake not matured");
+        Stake storage s = userStakes[msg.sender][stakeIndex];
+        if (s.withdrawn) revert AlreadyWithdrawn();
+        if (block.timestamp < s.endTime) revert StakeNotMatured();
 
         s.withdrawn = true;
         uint256 totalPayout = s.amount + s.reward;
         
-        require(snrg.transfer(msg.sender, totalPayout), "transfer fail");
+        // FIX H-03: Decrease promised rewards AND rewardReserve when rewards are paid
+        promisedRewards -= s.reward;
+        rewardReserve -= s.reward;  // Track actual reward payout
+        
+        SNRG.safeTransfer(msg.sender, totalPayout);
         emit Withdrawn(msg.sender, stakeIndex, s.amount, s.reward);
     }
 
+    /**
+     * @notice Withdraw stake early with penalty
+     * @dev FIX H-03: Rewards are forfeited (not paid), so rewardReserve is NOT decreased
+     * @param stakeIndex Index of the stake
+     */
     function withdrawEarly(uint256 stakeIndex) external nonReentrant {
-        require(address(snrg) != address(0), "snrg=0");
-        require(stakeIndex < userStakes[msg.sender].length, "invalid index");
-        Stake storage s = userStakes[msg.sender][stakeIndex];
+        if (stakeIndex >= userStakes[msg.sender].length) revert InvalidIndex();
         
-        require(!s.withdrawn, "already withdrawn");
-        require(block.timestamp < s.endTime, "stake has matured");
+        Stake storage s = userStakes[msg.sender][stakeIndex];
+        if (s.withdrawn) revert AlreadyWithdrawn();
+        if (block.timestamp >= s.endTime) revert StakeMatured();
 
         s.withdrawn = true;
         
+        // FIX H-03: Update promised rewards (early withdrawal forfeits rewards)
+        // Do NOT decrease rewardReserve since rewards weren't paid out
+        promisedRewards -= s.reward;
+        
         uint256 fee = (s.amount * EARLY_WITHDRAWAL_FEE_BPS) / 10000;
+        if (fee >= s.amount) revert FeeExceedsAmount();
         uint256 returnAmount = s.amount - fee;
         
-        require(snrg.transfer(treasury, fee), "fee transfer fail");
-        require(snrg.transfer(msg.sender, returnAmount), "return transfer fail");
+        SNRG.safeTransfer(TREASURY, fee);
+        SNRG.safeTransfer(msg.sender, returnAmount);
         
         emit WithdrawnEarly(msg.sender, stakeIndex, returnAmount, fee);
     }
+    
+    /**
+     * @notice Emergency withdraw with higher penalty
+     * @dev FIX H-03: Rewards are forfeited (not paid), so rewardReserve is NOT decreased
+     * @param stakeIndex Index of the stake
+     */
+    function emergencyWithdraw(uint256 stakeIndex) external nonReentrant {
+        if (stakeIndex >= userStakes[msg.sender].length) revert InvalidIndex();
+        
+        Stake storage s = userStakes[msg.sender][stakeIndex];
+        if (s.withdrawn) revert AlreadyWithdrawn();
 
+        s.withdrawn = true;
+        
+        // FIX H-03: Update promised rewards (emergency withdrawal forfeits rewards)
+        // Do NOT decrease rewardReserve since rewards weren't paid out
+        promisedRewards -= s.reward;
+        
+        uint256 fee = (s.amount * EMERGENCY_FEE_BPS) / 10000;
+        if (fee >= s.amount) revert FeeExceedsAmount();
+        uint256 returnAmount = s.amount - fee;
+        
+        SNRG.safeTransfer(TREASURY, fee);
+        SNRG.safeTransfer(msg.sender, returnAmount);
+        
+        emit EmergencyWithdrawal(msg.sender, stakeIndex, returnAmount, fee);
+    }
+
+    /**
+     * @notice Get stake count for user
+     * @param user User address
+     * @return Number of stakes
+     */
     function getStakeCount(address user) external view returns (uint256) {
         return userStakes[user].length;
     }
-
-    function getStake(address user, uint256 stakeIndex) external view returns (Stake memory) {
-        return userStakes[user][stakeIndex];
+    
+    /**
+     * @notice Check if contract has sufficient reserves for all promised rewards
+     * @dev FIX H-03: View function to verify solvency
+     * @return bool True if reserves are sufficient
+     */
+    function isSolvent() external view returns (bool) {
+        return rewardReserve >= promisedRewards;
+    }
+    
+    /**
+     * @notice Get reserve accounting information
+     * @dev FIX H-03: Added view for monitoring reserve status
+     * @return rewardReserve_ Current unspent reward reserves
+     * @return promisedRewards_ Total promised rewards
+     * @return availableRewards_ Available rewards (reserves - promised)
+     */
+    function getReserveInfo() external view returns (uint256 rewardReserve_, uint256 promisedRewards_, uint256 availableRewards_) {
+        rewardReserve_ = rewardReserve;
+        promisedRewards_ = promisedRewards;
+        availableRewards_ = rewardReserve > promisedRewards ? rewardReserve - promisedRewards : 0;
     }
 
-    function setSnrgToken(address _snrg) external onlyOwner {
-        require(address(snrg) == address(0), "SNRG token address already set");
-        require(_snrg != address(0), "snrg=0");
-        snrg = IERC20(_snrg);
+    /**
+     * @notice Get stake details
+     * @param user User address
+     * @param stakeIndex Stake index
+     * @return Stake details
+     */
+    function getStake(address user, uint256 stakeIndex) external view returns (Stake memory) {
+        if (stakeIndex >= userStakes[user].length) revert InvalidIndex();
+        return userStakes[user][stakeIndex];
+    }
+    
+    /**
+     * @notice Pause the contract
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    /**
+     * @notice Unpause the contract
+     */
+    function unpause() external onlyOwner {
+        _unpause();
     }
 }

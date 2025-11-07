@@ -1,0 +1,14 @@
+/Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/deps/libserde-8ca9cfb31acf5094.rmeta: /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/lib.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/integer128.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/mod.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/de.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/ser.rs /Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/build/serde-42b98bf3b385d9a2/out/private.rs
+
+/Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/deps/libserde-8ca9cfb31acf5094.rlib: /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/lib.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/integer128.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/mod.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/de.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/ser.rs /Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/build/serde-42b98bf3b385d9a2/out/private.rs
+
+/Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/deps/serde-8ca9cfb31acf5094.d: /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/lib.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/integer128.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/mod.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/de.rs /Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/ser.rs /Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/build/serde-42b98bf3b385d9a2/out/private.rs
+
+/Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/lib.rs:
+/Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/integer128.rs:
+/Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/mod.rs:
+/Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/de.rs:
+/Users/devpup/.cargo/registry/src/index.crates.io-6f17d22bba15001f/serde-1.0.228/src/private/ser.rs:
+/Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/build/serde-42b98bf3b385d9a2/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/devpup/Desktop/synergy-contracts/solana/target/sbpf-solana-solana/release/build/serde-42b98bf3b385d9a2/out

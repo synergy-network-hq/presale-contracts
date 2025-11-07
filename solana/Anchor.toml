@@ -1,0 +1,31 @@
+[features]
+seeds = false
+skip-lint = false
+
+[programs.localnet]
+snrg_staking = "11111111111111111111111111111111"
+snrg_presale = "11111111111111111111111111111111"
+snrg_swap = "11111111111111111111111111111111"
+snrg_token = "11111111111111111111111111111111"
+self_rescue_registry = "11111111111111111111111111111111"
+
+[programs.mainnet]
+snrg_staking = "11111111111111111111111111111111"
+snrg_presale = "11111111111111111111111111111111"
+snrg_swap = "11111111111111111111111111111111"
+snrg_token = "11111111111111111111111111111111"
+self_rescue_registry = "11111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "mainnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+
+
+

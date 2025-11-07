@@ -1,5 +1,5 @@
 {
-  "_format": "hh-sol-artifact-1",
+  "_format": "hh3-artifact-1",
   "contractName": "IBurnable",
   "sourceName": "contracts/SNRGswap.sol",
   "abi": [
@@ -208,5 +208,8 @@
   "bytecode": "0x",
   "deployedBytecode": "0x",
   "linkReferences": {},
-  "deployedLinkReferences": {}
+  "deployedLinkReferences": {},
+  "immutableReferences": {},
+  "inputSourceName": "project/contracts/SNRGswap.sol",
+  "buildInfoId": "solc-0_8_28-08b6b21c6bafc74aa860428c088847463d5c34e9"
 }
