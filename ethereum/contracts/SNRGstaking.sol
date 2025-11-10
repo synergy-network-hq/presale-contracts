@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.28;
+pragma solidity ^0.8.30;
 
 /* *
 *  /$$$$$$                                                             
@@ -95,7 +95,7 @@ contract SNRGStaking is Ownable2Step, ReentrancyGuard, Pausable {
     error StakeMatured();
     error FeeExceedsAmount();
     error InsufficientBalance();
-    error InsufficientReservesError();
+    error InsufficientReserves();
 
     /**
      * @notice Constructor
@@ -176,7 +176,7 @@ contract SNRGStaking is Ownable2Step, ReentrancyGuard, Pausable {
         // FIX H-03: Check if we have sufficient reserves for this reward
         if (rewardReserve < promisedRewards + reward) {
             emit InsufficientReserves(promisedRewards + reward, rewardReserve);
-            revert InsufficientReservesError();
+            revert InsufficientReserves();
         }
         
         // Note: block.timestamp can be manipulated by miners within ~15 minutes

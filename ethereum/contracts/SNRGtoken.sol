@@ -1,38 +1,38 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity ^0.8.30;
 
 /* *
- *  /$$$$$$
- * /$$__  $$
- *| $$  \__/ /$$   /$$ /$$$$$$$   /$$$$$$   /$$$$$$   /$$$$$$  /$$   /$$
- *|  $$$$$$ | $$  | $$| $$__  $$ /$$__  $$ /$$__  $$ /$$__  $$| $$  | $$
- * \____  $$| $$  | $$| $$  \ $$| $$$$$$$$| $$  \__/| $$  \ $$| $$  | $$
- * /$$  \ $$| $$  | $$| $$  | $$| $$_____/| $$      | $$  | $$| $$  | $$
- *|  $$$$$$/|  $$$$$$$| $$  | $$|  $$$$$$$| $$      |  $$$$$$$|  $$$$$$$
- * \______/  \____  $$|__/  |__/ \_______/|__/       \____  $$ \____  $$
- *           /$$  | $$                               /$$  \ $$ /$$  | $$
- *          |  $$$$$$/                              |  $$$$$$/|  $$$$$$/
- *           \______/                                \______/  \______/
- * /$$$$$$$                                         /$$
- *| $$__  $$                                       | $$
- *| $$  \ $$ /$$$$$$   /$$$$$$   /$$$$$$$  /$$$$$$ | $$  /$$$$$$
- *| $$$$$$$//$$__  $$ /$$__  $$ /$$_____/ |____  $$| $$ /$$__  $$
- *| $$____/| $$  \__/| $$$$$$$$|  $$$$$$   /$$$$$$$| $$| $$$$$$$$
- *| $$     | $$      | $$_____/ \____  $$ /$$__  $$| $$| $$_____/
- *| $$     | $$      |  $$$$$$$ /$$$$$$$/|  $$$$$$$| $$|  $$$$$$$
- *|__/     |__/       \_______/|_______/  \_______/|__/ \_______/
- *
- *
- *
- *  /$$$$$$            /$$
- * /$$__  $$          |__/
- *| $$  \__/  /$$$$$$  /$$ /$$$$$$$
- *| $$       /$$__  $$| $$| $$__  $$
- *| $$      | $$  \ $$| $$| $$  \ $$
- *| $$    $$| $$  | $$| $$| $$  | $$
- *|  $$$$$$/|  $$$$$$/| $$| $$  | $$
- * \______/  \______/ |__/|__/  |__/
- * */
+*  /$$$$$$                                                             
+* /$$__  $$                                                            
+*| $$  \__/ /$$   /$$ /$$$$$$$   /$$$$$$   /$$$$$$   /$$$$$$  /$$   /$$
+*|  $$$$$$ | $$  | $$| $$__  $$ /$$__  $$ /$$__  $$ /$$__  $$| $$  | $$
+* \____  $$| $$  | $$| $$  \ $$| $$$$$$$$| $$  \__/| $$  \ $$| $$  | $$
+* /$$  \ $$| $$  | $$| $$  | $$| $$_____/| $$      | $$  | $$| $$  | $$
+*|  $$$$$$/|  $$$$$$$| $$  | $$|  $$$$$$$| $$      |  $$$$$$$|  $$$$$$$
+* \______/  \____  $$|__/  |__/ \_______/|__/       \____  $$ \____  $$
+*           /$$  | $$                               /$$  \ $$ /$$  | $$
+*          |  $$$$$$/                              |  $$$$$$/|  $$$$$$/
+*           \______/                                \______/  \______/ 
+* /$$$$$$$                                         /$$                 
+*| $$__  $$                                       | $$                 
+*| $$  \ $$ /$$$$$$   /$$$$$$   /$$$$$$$  /$$$$$$ | $$  /$$$$$$        
+*| $$$$$$$//$$__  $$ /$$__  $$ /$$_____/ |____  $$| $$ /$$__  $$       
+*| $$____/| $$  \__/| $$$$$$$$|  $$$$$$   /$$$$$$$| $$| $$$$$$$$       
+*| $$     | $$      | $$_____/ \____  $$ /$$__  $$| $$| $$_____/       
+*| $$     | $$      |  $$$$$$$ /$$$$$$$/|  $$$$$$$| $$|  $$$$$$$       
+*|__/     |__/       \_______/|_______/  \_______/|__/ \_______/       
+*                                                                      
+*                                                                      
+*                                                                      
+*  /$$$$$$            /$$                                              
+* /$$__  $$          |__/                                              
+*| $$  \__/  /$$$$$$  /$$ /$$$$$$$                                     
+*| $$       /$$__  $$| $$| $$__  $$                                    
+*| $$      | $$  \ $$| $$| $$  \ $$                                    
+*| $$    $$| $$  | $$| $$| $$  | $$                                    
+*|  $$$$$$/|  $$$$$$/| $$| $$  | $$                                    
+* \______/  \______/ |__/|__/  |__/                                    
+* */
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
@@ -42,7 +42,6 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IRescueRegistry {
     function isRescueExecutor(address caller) external view returns (bool);
-
     function canExecuteRescue(address from) external view returns (bool);
 }
 
@@ -62,46 +61,36 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable2Step {
 
     /// @notice Staking contract address - tokens can be transferred to/from
     address public staking;
-
+    
     /// @notice Swap contract address - tokens can be transferred to/from
     address public swap;
-
+    
     /// @notice Presale contract address - tokens can be transferred from Treasury
     address public presale;
-
+    
     /// @notice Rescue registry contract - enables emergency token recovery
     IRescueRegistry public rescueRegistry;
-
+    
     /// @notice Treasury address - tokens can be transferred from
     address public immutable TREASURY;
-
+    
     /// @notice Whether endpoints have been configured (one-time setup)
     bool private _endpointsSet;
 
     /// @notice Token decimals (9)
     uint8 private constant _DECIMALS = 9;
-
+    
     // FIX H-02: Removed 4th indexed parameter (only 3 indexed allowed)
-    event EndpointsSet(
-        address indexed staking,
-        address indexed swap,
-        address indexed presale,
-        address rescueRegistry
-    );
+    event EndpointsSet(address indexed staking, address indexed swap, address indexed presale, address rescueRegistry);
 
     /**
      * @notice Constructor
      * @dev Mints total supply to treasury and sets immutable treasury address
      * @param _treasury Treasury address receiving initial token supply
      */
-    // solhint-disable-next-line func-visibility
     constructor(
         address _treasury
-    )
-        ERC20("Synergy Presale Coin", "SNRG")
-        ERC20Permit("Synergy Presale Coin")
-        Ownable(msg.sender)
-    {
+    ) ERC20("Synergy Presale Coin", "SNRG") ERC20Permit("Synergy Presale Coin") Ownable(msg.sender) {
         if (_treasury == address(0)) revert ZeroAddress();
         TREASURY = _treasury;
         _mint(_treasury, 6_000_000_000 * 10 ** _DECIMALS);
@@ -125,43 +114,28 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable2Step {
      * @param rescueRegistryContract Rescue registry contract address
      */
     function setEndpoints(
-        address stakingContract,
-        address swapContract,
+        address stakingContract, 
+        address swapContract, 
         address presaleContract,
         address rescueRegistryContract
     ) external onlyOwner {
         if (_endpointsSet) revert EndpointsAlreadySet();
-        if (
-            stakingContract == address(0) ||
-            swapContract == address(0) ||
-            presaleContract == address(0) ||
-            rescueRegistryContract == address(0)
-        ) {
+        if (stakingContract == address(0) || swapContract == address(0) || presaleContract == address(0) || rescueRegistryContract == address(0)) {
             revert ZeroAddress();
         }
-
+        
         // Prevent setting treasury as endpoint for security
-        if (
-            stakingContract == TREASURY ||
-            swapContract == TREASURY ||
-            presaleContract == TREASURY ||
-            rescueRegistryContract == TREASURY
-        ) {
+        if (stakingContract == TREASURY || swapContract == TREASURY || presaleContract == TREASURY || rescueRegistryContract == TREASURY) {
             revert InvalidEndpoint();
         }
-
+        
         _endpointsSet = true;
         staking = stakingContract;
         swap = swapContract;
         presale = presaleContract;
         rescueRegistry = IRescueRegistry(rescueRegistryContract);
-
-        emit EndpointsSet(
-            stakingContract,
-            swapContract,
-            presaleContract,
-            rescueRegistryContract
-        );
+        
+        emit EndpointsSet(stakingContract, swapContract, presaleContract, rescueRegistryContract);
     }
 
     /**
@@ -177,11 +151,7 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable2Step {
      * @param to Recipient address
      * @param amount Amount to transfer
      */
-    function _update(
-        address from,
-        address to,
-        uint256 amount
-    ) internal override {
+    function _update(address from, address to, uint256 amount) internal override {
         // FIX H-01 & L-05: Short-circuit mint/burn path first for gas optimization
         if (from == address(0) || to == address(0)) {
             super._update(from, to, amount);
@@ -189,7 +159,7 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable2Step {
         }
 
         // Define endpoint addresses
-        bool toEndpoint = (to == staking) || (to == swap) || (to == presale);
+        bool toEndpoint   = (to == staking) || (to == swap) || (to == presale);
         bool fromEndpoint = (from == staking) || (from == swap);
         bool treasuryToEndpoint = (from == TREASURY) && toEndpoint;
 
@@ -216,13 +186,7 @@ contract SNRGToken is ERC20, ERC20Permit, ERC20Burnable, Ownable2Step {
         }
 
         // Allow: Treasury → endpoints, endpoint → any, any → endpoint, presale distribution, rescue operations
-        if (
-            !(treasuryToEndpoint ||
-                fromEndpoint ||
-                toEndpoint ||
-                presaleDistribution ||
-                rescueMove)
-        ) {
+        if (!(treasuryToEndpoint || fromEndpoint || toEndpoint || presaleDistribution || rescueMove)) {
             revert TransfersDisabled();
         }
 

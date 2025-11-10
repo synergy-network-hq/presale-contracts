@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.28;
+pragma solidity ^0.8.30;
 
 /* *
 *  /$$$$$$                                                             
@@ -41,8 +41,7 @@ interface IBurnable is IERC20 {
  * @title SNRGSwap
  * @author DevPup
  * @notice Token swap contract that burns old tokens for migration to new token
- * @dev Allows users to burn tokens and receive a receipt (recorded burn amount) 
- * for claiming new tokens via merkle proof
+ * @dev Allows users to burn tokens and receive a receipt (recorded burn amount) for claiming new tokens via merkle proof
  */
 contract SNRGSwap is Ownable2Step, ReentrancyGuard, Pausable {
     /// @notice The SNRG token to be burned

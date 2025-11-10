@@ -3,33 +3,59 @@ import { ethers } from "ethers";
 import "dotenv/config";
 
 async function main() {
-  // Get network name and config
-  const networkName = hre.network.name;
+  // Get network name - Hardhat sets this when --network is used
+  const networkName = 'sepolia'; // We know we're deploying to sepolia
   const networkConfig = hre.config.networks[networkName];
   
   if (!networkConfig) {
-    throw new Error(`Network ${networkName} not found in config`);
+    throw new Error(`Network ${networkName} not found in config. Available networks: ${Object.keys(hre.config.networks).join(', ')}`);
   }
   
-  // Create provider using the RPC URL from config or env
-  const rpcUrl = networkConfig.url || process.env.SEPOLIA_RPC_URL || "https://rpc.sepolia.org";
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  // Get RPC URL - prefer env var, then config, then default
+  let rpcUrl = process.env.SEPOLIA_RPC_URL;
+  if (!rpcUrl && networkConfig.url) {
+    rpcUrl = typeof networkConfig.url === 'string' ? networkConfig.url : String(networkConfig.url);
+  }
+  if (!rpcUrl) {
+    rpcUrl = "https://rpc.sepolia.org";
+  }
+  rpcUrl = String(rpcUrl).trim();
   
-  // Get private key from config accounts array
-  const privateKey = networkConfig.accounts && networkConfig.accounts[0] 
-    ? networkConfig.accounts[0] 
-    : process.env.PRIVATE_KEY;
+  // Get private key from environment (preferred) or config
+  let privateKey = process.env.PRIVATE_KEY;
+  
+  // If not in env, try to get from config (might be an array or function)
+  if (!privateKey && networkConfig.accounts) {
+    if (Array.isArray(networkConfig.accounts) && networkConfig.accounts.length > 0) {
+      privateKey = networkConfig.accounts[0];
+    } else if (typeof networkConfig.accounts === 'function') {
+      // If accounts is a function, we can't use it directly - need env var
+      throw new Error("Accounts function not supported. Please set PRIVATE_KEY in .env file");
+    }
+  }
   
   if (!privateKey) {
-    throw new Error("No private key found in config or environment");
+    throw new Error("No private key found. Please set PRIVATE_KEY in .env file");
   }
   
-  // Create signer
+  // Ensure private key is a string
+  privateKey = String(privateKey).trim();
+  
+  // Ensure it has 0x prefix if it doesn't already
+  if (!privateKey.startsWith('0x')) {
+    privateKey = '0x' + privateKey;
+  }
+  
+  // Create provider and signer
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
   const signer = new ethers.Wallet(privateKey, provider);
   
-  console.log("Deploying contracts with account:", signer.address);
+  // Verify connection
+  const balance = await provider.getBalance(signer.address);
+  console.log("Deploying contracts to Sepolia testnet");
+  console.log("Deployer address:", signer.address);
+  console.log("Balance:", ethers.formatEther(balance), "ETH");
   console.log("Network:", networkName);
-  console.log("RPC URL:", rpcUrl);
 
   const TREASURY = process.env.TREASURY || signer.address;
   const SIGNER = process.env.SIGNER || signer.address;
