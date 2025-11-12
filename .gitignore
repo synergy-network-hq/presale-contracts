@@ -1,23 +1,104 @@
-# Environment variables
+# Environment & secrets
 .env
 .env.local
 .env.*.local
+.envrc
+*.env
+*.key
+*.pem
+!.env.example
+!.env.*.example
 
-# Node modules
+# Package manager artifacts
 node_modules/
+**/node_modules/
+jspm_packages/
+.pnp.*
+.npm/
+.yarn/*
+.yarn-integrity
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+ts-node-dev.log
 
-# Build artifacts
+# Logs & diagnostics
+logs/
+*.log
+*.log.*
+*.pid
+*.seed
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+.eslintcache
+.stylelintcache
+.nyc_output/
+.cache/
+.cache-loader/
+
+# Build / dist outputs
+dist/
+build/
+lib/
+tmp/
+temp/
+coverage/
+coverage-*/
+coverage.*
+coverage-final.json
+coverage.json
+coverage.lcov
+lcov.info
+*.d.ts.map
+*.map
+
+# Hardhat / EVM tooling
 **/artifacts/
 **/cache/
 **/out/
+**/typechain/
+**/typechain-types/
+**/deployments/
+**/broadcast/
+flattened/
+hardhat.cache
+hardhat-network-fork/
+hardhat-network-state/
+gas-report.*
 
-# IDE
+# Foundry / Forge / Anvil
+**/forge-artifacts/
+**/forge-cache/
+**/forge-snapshots/
+**/anvil-state/
+
+# Solana / Anchor / Rust
+**/target/
+**/.anchor/
+
+# IDE / editor
 .vscode/
 .idea/
+.history/
+.fleet/
+.vs/
+*.iml
 *.swp
 *.swo
 *~
+*.orig
+*.rej
 
-# OS
+# OS files
 .DS_Store
+.DS_Store?
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+Icon?
+.Spotlight-V100
+.Trashes
+._*
