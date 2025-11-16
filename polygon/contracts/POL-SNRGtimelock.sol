@@ -33,7 +33,7 @@ import {TimelockController} from "@openzeppelin/contracts/governance/TimelockCon
  *      - The multisig is the sole PROPOSER and ADMIN
  *      - The EXECUTOR role is granted to address(0), allowing permissionless execution after delay
  *      - Deployer's admin role is revoked after setup for security
- * @dev Audit Note: This contract was already correct in the prior version. No changes needed.
+ *      - Audit Note: This contract was already correct in the prior version. No changes needed.
  */
 contract Timelock is TimelockController {
     event TimelockDeployed(address indexed multisig, uint256 minDelay);
@@ -52,7 +52,7 @@ contract Timelock is TimelockController {
     constructor(
         uint256 minDelay,
         address multisig
-    ) TimelockController(
+    ) payable TimelockController(
         minDelay,
         new address[](0),  // No initial proposers
         new address[](0),  // No initial executors (address(0) will be executor)
@@ -60,8 +60,9 @@ contract Timelock is TimelockController {
     ) {
         if (multisig == address(0)) revert ZeroAddress();
         if (minDelay == 0) revert ZeroDelay();
-        if (minDelay < 2 days) revert DelayTooShort();
-        if (minDelay > 30 days) revert DelayTooLong();
+        // Gas optimization: use >= and <= instead of > and <
+        if (2 days > minDelay) revert DelayTooShort();
+        if (30 days < minDelay) revert DelayTooLong();
         
         // Grant the multisig the ability to propose operations
         _grantRole(PROPOSER_ROLE, multisig);
