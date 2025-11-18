@@ -1,20 +1,34 @@
 [package]
 name = "snrg_swap"
-version = "0.1.0"
-description = "Created with Anchor"
+version = "0.2.0"
+description = "Exact Solana port of POL-SNRGswap.sol – secure token migration burn portal with timelocked merkle finalization"
 edition = "2021"
+license = "MIT"
+homepage = "https://synergy-network.io"
+repository = "https://github.com/synergy-network-hq/contracts_and_programs"
+keywords = ["solana", "anchor", "token-swap", "migration", "merkle"]
+categories = ["cryptocurrency", "blockchain"]
 
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "snrg_swap"
 
 [features]
+default = []
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
-default = []
 
 [dependencies]
-anchor-lang = { workspace = true }
-anchor-spl = { workspace = true }
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
+
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.dev]
+overflow-checks = true

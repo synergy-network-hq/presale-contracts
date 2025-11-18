@@ -1,12 +1,12 @@
 [package]
-name = "snrg_presale"
+name = "self_rescue_registry"
 version = "0.2.0"
-description = "Exact Solana port of SNRGPresale.sol – secure signed presale with exact delivery"
+description = "Exact Solana port of SelfRescueRegistry.sol – secure self-rescue with opt-in approval"
 edition = "2021"
 license = "MIT"
 homepage = "https://synergy-network.io"
 repository = "https://github.com/synergy-network-hq/contracts_and_programs"
-keywords = ["solana", "anchor", "token-presale", "ico", "synergy"]
+keywords = ["solana", "anchor", "token-rescue", "recovery", "merkle"]
 categories = ["cryptocurrency", "blockchain"]
 
 [lib]

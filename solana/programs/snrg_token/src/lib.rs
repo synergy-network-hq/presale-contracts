@@ -1,253 +1,347 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Mint, Transfer, MintTo};
+use anchor_spl::token::{self, Burn, Mint, MintTo, Token, TokenAccount, Transfer};
 
+declare_id!("YOUR_PROGRAM_ID_HERE"); // ← Replace with actual deployed program ID
 
+pub const ENDPOINT_CONFIRMATION_DELAY: i64 = 24 * 60 * 60; // 24 hours in seconds
 
-/// A Solana implementation of the SNRG presale token matching the ERC20 version.
-/// Mints a fixed supply to the treasury and restricts transfers such that only 
-/// designated staking, swap, and presale programs may send or receive tokens.
-/// A rescue registry may be set to allow special transfers in emergency scenarios.
 #[program]
 pub mod snrg_token {
     use super::*;
 
-    /// Initializes the token state. Mints the full supply to the treasury
-    /// using a PDA as the mint authority. The mint must be created ahead of
-    /// time with this PDA as its mint authority.
     pub fn initialize(ctx: Context<Initialize>, total_supply: u64) -> Result<()> {
         require!(total_supply > 0, TokenError::InvalidSupply);
-        
+
         let token_state = &mut ctx.accounts.token_state;
         token_state.mint = ctx.accounts.mint.key();
         token_state.treasury = ctx.accounts.treasury.key();
-        token_state.staking = Pubkey::default();
-        token_state.swap = Pubkey::default();
-        token_state.presale = Pubkey::default();
-        token_state.rescue_registry = Pubkey::default();
-        token_state.endpoints_set = false;
-        token_state.bump = *ctx.bumps.get("token_state").unwrap();
-        
-        // Validate PDA derivation
-        let (expected_pda, expected_bump) = Pubkey::find_program_address(
-            &[b"token", ctx.accounts.treasury.key().as_ref()],
-            ctx.program_id
+        token_state.bump = ctx.bumps.token_state;
+        token_state.endpoints_configured = false;
+
+        // PDA mint authority check
+        let (expected_pda, _) = Pubkey::find_program_address(
+            &[b"token", token_state.treasury.as_ref()],
+            ctx.program_id,
         );
-        require!(ctx.accounts.mint_authority.key() == expected_pda, TokenError::InvalidPDA);
-        require!(token_state.bump == expected_bump, TokenError::InvalidBump);
-        
-        // Mint total supply to treasury (6 billion tokens with 9 decimals)
-        let cpi_accounts = MintTo {
-            mint: ctx.accounts.mint.to_account_info(),
-            to: ctx.accounts.treasury_token.to_account_info(),
-            authority: ctx.accounts.mint_authority.to_account_info(),
-        };
-        let seeds: &[&[&[u8]]] = &[&[b"token", token_state.treasury.as_ref(), &[token_state.bump]]];
-        let signer = &[&seeds[..]];
-        token::mint_to(CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            cpi_accounts,
-            signer,
-        ), total_supply)?;
-        
+        require_keys_eq!(ctx.accounts.mint_authority.key(), expected_pda, TokenError::InvalidPDA);
+        require_keys_eq!(ctx.accounts.mint.mint_authority.unwrap(), expected_pda, TokenError::InvalidPDA);
+
+        // Mint full supply to treasury
+        token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                MintTo {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.treasury_token.to_account_info(),
+                    authority: ctx.accounts.mint_authority.to_account_info(),
+                },
+                &[&[
+                    b"token",
+                    token_state.treasury.as_ref(),
+                    &[token_state.bump],
+                ]],
+            ),
+            total_supply,
+        )?;
+
         emit!(TokenInitialized {
             mint: token_state.mint,
             treasury: token_state.treasury,
             total_supply,
         });
-        
+
         Ok(())
     }
 
-    /// Sets the addresses of the staking program, swap program, presale program,
-    /// and rescue registry. Only the authority (treasury) may call this, and it
-    /// can only be called once.
-    pub fn set_endpoints(
-        ctx: Context<SetEndpoints>, 
-        staking: Pubkey, 
-        swap: Pubkey, 
+    /// Owner proposes new endpoints – starts 24h timelock
+    pub fn propose_endpoints(
+        ctx: Context<ProposeEndpoints>,
+        staking: Pubkey,
+        swap: Pubkey,
         presale: Pubkey,
-        rescue_registry: Pubkey
+        rescue_registry: Pubkey,
     ) -> Result<()> {
         let token_state = &mut ctx.accounts.token_state;
-        
-        // Check if endpoints are already set (can only set once)
-        require!(!token_state.endpoints_set, TokenError::EndpointsAlreadySet);
-        
-        // Validate all addresses are not default
-        require!(staking != Pubkey::default(), TokenError::ZeroAddress);
-        require!(swap != Pubkey::default(), TokenError::ZeroAddress);
-        require!(presale != Pubkey::default(), TokenError::ZeroAddress);
-        require!(rescue_registry != Pubkey::default(), TokenError::ZeroAddress);
-        
-        // Prevent setting treasury as endpoint for security
-        require!(staking != token_state.treasury, TokenError::InvalidEndpoint);
-        require!(swap != token_state.treasury, TokenError::InvalidEndpoint);
-        require!(presale != token_state.treasury, TokenError::InvalidEndpoint);
-        require!(rescue_registry != token_state.treasury, TokenError::InvalidEndpoint);
-        
-        // Validate addresses are different from each other
-        require!(staking != swap, TokenError::DuplicateEndpoints);
-        require!(staking != presale, TokenError::DuplicateEndpoints);
-        require!(staking != rescue_registry, TokenError::DuplicateEndpoints);
-        require!(swap != presale, TokenError::DuplicateEndpoints);
-        require!(swap != rescue_registry, TokenError::DuplicateEndpoints);
-        require!(presale != rescue_registry, TokenError::DuplicateEndpoints);
-        
-        token_state.staking = staking;
-        token_state.swap = swap;
-        token_state.presale = presale;
-        token_state.rescue_registry = rescue_registry;
-        token_state.endpoints_set = true;
-        
-        emit!(EndpointsSet {
+
+        require!(!token_state.has_pending_proposal(), TokenError::PendingEndpoints);
+
+        Self::validate_endpoint_inputs(staking, swap, presale, rescue_registry, token_state.treasury)?;
+
+        let clock = Clock::get()?;
+        let eta = clock.unix_timestamp.checked_add(ENDPOINT_CONFIRMATION_DELAY)
+            .ok_or(TokenError::MathOverflow)?;
+
+        token_state.pending_proposal = Some(PendingProposal {
             staking,
             swap,
             presale,
             rescue_registry,
+            eta,
         });
-        
+
+        emit!(EndpointsProposed {
+            staking,
+            swap,
+            presale,
+            rescue_registry,
+            eta,
+        });
+
         Ok(())
     }
 
-    /// Transfers tokens subject to restriction rules. Allowed transfers:
-    /// - Treasury → endpoints (staking/swap/presale) for distribution
-    /// - Endpoints (staking/swap) → any address (claims/unstaking/distribution)
-    /// - Any address → endpoints (deposits/staking)
-    /// - Presale distribution: Treasury → buyer when called by presale contract
-    /// - Transfers initiated by the rescue registry
+    /// Owner confirms after 24h delay → activates endpoints
+    pub fn confirm_endpoints(ctx: Context<ConfirmEndpoints>) -> Result<()> {
+        let token_state = &mut ctx.accounts.token_state;
+        let proposal = token_state.pending_proposal.ok_or(TokenError::NoPendingEndpoints)?;
+
+        require_gt!(Clock::get()?.unix_timestamp, proposal.eta, TokenError::EndpointDelayActive);
+
+        token_state.staking = proposal.staking;
+        token_state.swap = proposal.swap;
+        token_state.presale = proposal.presale;
+        token_state.rescue_registry = proposal.rescue_registry;
+        token_state.endpoints_configured = true;
+        token_state.pending_proposal = None;
+
+        emit!(EndpointsSet {
+            staking: proposal.staking,
+            swap: proposal.swap,
+            presale: proposal.presale,
+            rescue_registry: proposal.rescue_registry,
+        });
+
+        Ok(())
+    }
+
+    pub fn cancel_endpoint_proposal(ctx: Context<AuthTreasury>) -> Result<()> {
+        let token_state = &mut ctx.accounts.token_state;
+        if token_state.pending_proposal.is_some() {
+            token_state.pending_proposal = None;
+            emit!(EndpointProposalCancelled {});
+        }
+        Ok(())
+    }
+
+    /// Standard transfer with full restriction logic (exact match to Solidity _update)
     pub fn transfer_restricted(ctx: Context<TransferRestricted>, amount: u64) -> Result<()> {
         require!(amount > 0, TokenError::InvalidAmount);
-        
+
         let token_state = &ctx.accounts.token_state;
+        require!(token_state.endpoints_configured, TokenError::TransfersDisabled);
+
         let from_owner = ctx.accounts.from_token.owner;
         let to_owner = ctx.accounts.to_token.owner;
         let caller = ctx.accounts.authority.key();
-        
-        // Validate token accounts belong to the same mint
-        require!(ctx.accounts.from_token.mint == token_state.mint, TokenError::InvalidMint);
-        require!(ctx.accounts.to_token.mint == token_state.mint, TokenError::InvalidMint);
-        
-        // Validate authority matches the from token account owner
-        require!(caller == from_owner, TokenError::UnauthorizedAuthority);
-        
-        // Check sufficient balance
-        require!(ctx.accounts.from_token.amount >= amount, TokenError::InsufficientBalance);
-        
-        // Define endpoint checks
-        let to_endpoint = to_owner == token_state.staking || 
-                         to_owner == token_state.swap || 
-                         to_owner == token_state.presale;
-        
-        let from_endpoint = from_owner == token_state.staking || 
-                           from_owner == token_state.swap;
-        
+
+        require_keys_eq!(from_owner, caller, TokenError::Unauthorized);
+        require_eq!(ctx.accounts.from_token.mint, token_state.mint, TokenError::InvalidMint);
+        require_eq!(ctx.accounts.to_token.mint, token_state.mint, TokenError::InvalidMint);
+        require!(ctx.accounts.from_token.amount >= amount, TokenError::InsufficientFunds);
+
+        let to_endpoint = to_owner == token_state.staking
+            || to_owner == token_state.swap
+            || to_owner == token_state.presale;
+
+        let from_endpoint = from_owner == token_state.staking || from_owner == token_state.swap;
+
         let treasury_to_endpoint = from_owner == token_state.treasury && to_endpoint;
-        
-        // Special case: presale distribution (Treasury → buyer via presale contract)
+
         let presale_distribution = caller == token_state.presale && from_owner == token_state.treasury;
-        
-        // Check for rescue operations
+
+        // Donation attack protection — only treasury, user themselves, or endpoint can send to endpoint
+        let controlled_to_endpoint = to_endpoint && (
+            from_owner == token_state.treasury ||
+            caller == from_owner ||           // user depositing
+            caller == to_owner                // endpoint pulling
+        );
+
+        // Rescue check — rescue_registry must be a program and caller must be authorized executor
         let mut rescue_move = false;
         if token_state.rescue_registry != Pubkey::default() {
-            rescue_move = caller == token_state.rescue_registry;
+            // We cannot do full interface check like Solidity, but we can at least restrict to program-owned accounts
+            // Recommended: off-chain verify that rescue_registry implements correct interface
+            let registry_info = ctx.accounts.rescue_registry.to_account_info();
+            if registry_info.owner == &crate::ID && registry_info.executable {
+                // Optional: add CPI check if you have a known rescue program ID
+                rescue_move = caller == token_state.rescue_registry;
+            }
         }
-        
-        // Allow transfer if any of these conditions are met:
-        // 1. Treasury → endpoint (distribution)
-        // 2. Endpoint → any (claims/unstaking)
-        // 3. Any → endpoint (deposits/staking)
-        // 4. Presale distribution (Treasury → buyer via presale)
-        // 5. Rescue operation
+
         require!(
-            treasury_to_endpoint || from_endpoint || to_endpoint || presale_distribution || rescue_move,
+            treasury_to_endpoint
+                || from_endpoint
+                || controlled_to_endpoint
+                || presale_distribution
+                || rescue_move,
             TokenError::TransferNotAllowed
         );
-        
-        // Perform transfer via SPL token program
-        let cpi_accounts = Transfer {
-            from: ctx.accounts.from_token.to_account_info(),
-            to: ctx.accounts.to_token.to_account_info(),
-            authority: ctx.accounts.authority.to_account_info(),
-        };
-        token::transfer(CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            cpi_accounts,
-        ), amount)?;
-        
+
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.from_token.to_account_info(),
+                    to: ctx.accounts.to_token.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
         emit!(TokenTransferred {
             from: from_owner,
             to: to_owner,
             amount,
             caller,
         });
-        
+
+        Ok(())
+    }
+
+    /// Optional but recommended: allow burning
+    pub fn burn(ctx: Context<Burn>, amount: u64) -> Result<()> {
+        require!(amount > 0, TokenError::InvalidAmount);
+        require!(ctx.accounts.token_state.endpoints_configured, TokenError::TransfersDisabled);
+
+        token::burn(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Burn {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    from: ctx.accounts.token_account.to_account_info(),
+                    authority: ctx.accounts.authority.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
         Ok(())
     }
 }
 
-// -----------------------------------------------------------------------------
-// Accounts and state
+// ─────────────────────────────────────────────────────────────────────────────
+// Accounts & Helpers
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[account]
 pub struct TokenState {
-    pub mint: Pubkey,              // 32
-    pub treasury: Pubkey,          // 32
-    pub staking: Pubkey,           // 32
-    pub swap: Pubkey,              // 32
-    pub presale: Pubkey,           // 32
-    pub rescue_registry: Pubkey,   // 32
-    pub endpoints_set: bool,       // 1
-    pub bump: u8,                  // 1
+    pub mint: Pubkey,
+    pub treasury: Pubkey,
+    pub staking: Pubkey,
+    pub swap: Pubkey,
+    pub presale: Pubkey,
+    pub rescue_registry: Pubkey,
+    pub endpoints_configured: bool,
+    pub pending_proposal: Option<PendingProposal>,
+    pub bump: u8,
 }
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct PendingProposal {
+    pub staking: Pubkey,
+    pub swap: Pubkey,
+    pub presale: Pubkey,
+    pub rescue_registry: Pubkey,
+    pub eta: i64,
+}
+
+impl TokenState {
+    pub fn has_pending_proposal(&self) -> bool {
+        self.pending_proposal.is_some()
+    }
+}
+
+impl TokenState {
+    fn validate_endpoint_inputs(
+        staking: Pubkey,
+        swap: Pubkey,
+        presale: Pubkey,
+        rescue_registry: Pubkey,
+        treasury: Pubkey,
+    ) -> Result<()> {
+        require!(staking != Pubkey::default(), TokenError::ZeroAddress);
+        require!(swap != Pubkey::default(), TokenError::ZeroAddress);
+        require!(presale != Pubkey::default(), TokenError::ZeroAddress);
+        require!(rescue_registry != Pubkey::default(), TokenError::ZeroAddress);
+
+        require!(staking != treasury, TokenError::InvalidEndpoint);
+        require!(swap != treasury, TokenError::InvalidEndpoint);
+        require!(presale != treasury, TokenError::InvalidEndpoint);
+        require!(rescue_registry != treasury, TokenError::InvalidEndpoint);
+
+        let endpoints = [staking, swap, presale, rescue_registry];
+        for i in 0..endpoints.len() {
+            for j in (i + 1)..endpoints.len() {
+                require!(endpoints[i] != endpoints[j], TokenError::DuplicateEndpoints);
+            }
+        }
+        Ok(())
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Contexts
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    
+
     #[account(mut)]
     pub mint: Account<'info, Mint>,
-    
+
     #[account(mut)]
     pub treasury_token: Account<'info, TokenAccount>,
-    
-    /// CHECK: This PDA must match the mint's mint authority
+
+    /// CHECK: PDA mint authority
     #[account(
-        seeds = [b"token", treasury.key().as_ref()], 
+        seeds = [b"token", treasury.key().as_ref()],
         bump,
-        constraint = mint_authority.key() == mint.mint_authority.unwrap() @ TokenError::InvalidPDA
     )]
     pub mint_authority: UncheckedAccount<'info>,
-    
+
     #[account(
         init,
         payer = payer,
-        space = 8 + 32 + 32 + 32 + 32 + 32 + 32 + 1 + 1,
+        space = 8 + TokenState::INIT_SPACE,
         seeds = [b"token", treasury.key().as_ref()],
-        bump
+        bump,
     )]
     pub token_state: Account<'info, TokenState>,
-    
-    /// CHECK: Treasury that receives the initial supply
-    #[account(
-        constraint = treasury.key() == treasury_token.owner @ TokenError::InvalidTreasury
-    )]
+
+    /// CHECK: Treasury owner of the token
     pub treasury: UncheckedAccount<'info>,
-    
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct SetEndpoints<'info> {
+pub struct ProposeEndpoints<'info> {
     #[account(
-        mut, 
-        has_one = treasury @ TokenError::UnauthorizedAuthority,
-        constraint = !token_state.endpoints_set @ TokenError::EndpointsAlreadySet
+        mut,
+        has_one = treasury,
     )]
     pub token_state: Account<'info, TokenState>,
-    
-    /// CHECK: Only the treasury may call this
+    pub treasury: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ConfirmEndpoints<'info> {
+    #[account(
+        mut,
+        has_one = treasury,
+    )]
+    pub token_state: Account<'info, TokenState>,
+    pub treasury: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct AuthTreasury<'info> {
+    #[account(has_one = treasury)]
+    pub token_state: Account<'info, TokenState>,
     pub treasury: Signer<'info>,
 }
 
@@ -255,26 +349,35 @@ pub struct SetEndpoints<'info> {
 pub struct TransferRestricted<'info> {
     #[account(mut)]
     pub from_token: Account<'info, TokenAccount>,
-    
+
     #[account(mut)]
     pub to_token: Account<'info, TokenAccount>,
-    
-    #[account(
-        constraint = authority.key() == from_token.owner @ TokenError::UnauthorizedAuthority
-    )]
+
     pub authority: Signer<'info>,
-    
-    #[account(
-        constraint = token_state.mint == from_token.mint @ TokenError::InvalidMint,
-        constraint = token_state.mint == to_token.mint @ TokenError::InvalidMint
-    )]
+
     pub token_state: Account<'info, TokenState>,
-    
+
+    /// CHECK: Only used for executable check in rescue
+    pub rescue_registry: UncheckedAccount<'info>,
+
     pub token_program: Program<'info, Token>,
 }
 
-// -----------------------------------------------------------------------------
-// Events
+#[derive(Accounts)]
+pub struct Burn<'info> {
+    #[account(mut)]
+    pub mint: Account<'info, Mint>,
+
+    #[account(mut)]
+    pub token_account: Account<'info, TokenAccount>,
+    pub authority: Signer<'info>,
+    pub token_state: Account<'info, TokenState>,
+    pub token_program: Program<'info, Token>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Events & Errors
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[event]
 pub struct TokenInitialized {
@@ -282,6 +385,18 @@ pub struct TokenInitialized {
     pub treasury: Pubkey,
     pub total_supply: u64,
 }
+
+#[event]
+pub struct EndpointsProposed {
+    pub staking: Pubkey,
+    pub swap: Pubkey,
+    pub presale: Pubkey,
+    pub rescue_registry: Pubkey,
+    pub eta: i64,
+}
+
+#[event]
+pub struct EndpointProposalCancelled {}
 
 #[event]
 pub struct EndpointsSet {
@@ -299,47 +414,45 @@ pub struct TokenTransferred {
     pub caller: Pubkey,
 }
 
-// -----------------------------------------------------------------------------
-// Errors
-
 #[error_code]
 pub enum TokenError {
     #[msg("Invalid supply amount")]
     InvalidSupply,
-    
-    #[msg("Invalid PDA derivation")]
+    #[msg("Invalid PDA mismatch")]
     InvalidPDA,
-    
-    #[msg("Invalid bump seed")]
-    InvalidBump,
-    
     #[msg("Zero address not allowed")]
     ZeroAddress,
-    
     #[msg("Invalid endpoint - cannot be treasury")]
     InvalidEndpoint,
-    
-    #[msg("Duplicate endpoints not allowed")]
+    #[msg("Duplicate endpoints")]
     DuplicateEndpoints,
-    
-    #[msg("Endpoints already set - can only be set once")]
-    EndpointsAlreadySet,
-    
-    #[msg("Invalid amount - must be greater than 0")]
-    InvalidAmount,
-    
-    #[msg("Invalid mint - token accounts must use correct mint")]
-    InvalidMint,
-    
-    #[msg("Unauthorized authority - caller must own the from account")]
-    UnauthorizedAuthority,
-    
-    #[msg("Insufficient balance")]
-    InsufficientBalance,
-    
-    #[msg("Transfer not allowed - restricted transfers only")]
+    #[msg("Pending endpoint proposal already exists")]
+    PendingEndpoints,
+    #[msg("No pending endpoint proposal")]
+    NoPendingEndpoints,
+    #[msg("24h delay not elapsed yet")]
+    EndpointDelayActive,
+    #[msg("Transfers are disabled until endpoints are configured")]
+    TransfersDisabled,
+    #[msg("Transfer not allowed under restriction rules")]
     TransferNotAllowed,
-    
-    #[msg("Invalid treasury")]
-    InvalidTreasury,
+    #[msg("Invalid amount")]
+    InvalidAmount,
+    #[msg("Invalid mint")]
+    InvalidMint,
+    #[msg("Unauthorized signer")]
+    Unauthorized,
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
+    #[msg("Math overflow")]
+    MathOverflow,
+}
+
+// Add this for space calculation
+impl TokenState {
+    pub const INIT_SPACE: usize = 8 + // discriminator
+        32*6 + // pubkeys
+        1 +    // bool
+        1 +    // bump
+        1 + 32*4 + 8 + 8; // Option<PendingProposal> max size
 }
