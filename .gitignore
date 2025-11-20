@@ -1,13 +1,11 @@
 # Environment & secrets
 .env
-.env.example
 .env.local
 .env.*.local
 .envrc
 *.env
 *.key
 *.pem
-!.env.*.example
 
 # Package manager artifacts
 node_modules/
